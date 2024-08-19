@@ -7,3 +7,5 @@ PyDirectInput==1.0.4
 pywin32==306
 scipy==1.10.1
 scikit-learn==1.2.2
+PyQt6==6.4.2
+vgamepad==0.1.0

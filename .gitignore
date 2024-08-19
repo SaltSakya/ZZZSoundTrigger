@@ -1,0 +1,7 @@
+\__pycache__
+\build
+\dist
+\zzz轮椅
+
+*.spec
+Pipfile

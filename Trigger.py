@@ -12,11 +12,12 @@ import pydirectinput
 import win32con
 import win32api
 
+import vgamepad
+
 import ctypes
 from ctypes import wintypes
 
 from Listener import GameAudioListener
-from Monitor import WaveMonitor
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 INPUT_MOUSE = 0
@@ -211,20 +212,75 @@ class HardKbMouse:
         else:
             print(self.ERROR, "执行脚本出错, info: {}".format(response))
 
+class GamePad:
+    SHORT_PRESS_TIME = 0.1
+    def __init__(self, gamepad_type="X360"):
+        if gamepad_type == "DS4":
+            self.gamepad = vgamepad.VDS4Gamepad()
+        else:
+            self.gamepad = vgamepad.VX360Gamepad()
+
+    def downFuncPress(self):
+        self.gamepad.press_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_A)
+        self.gamepad.update()
+        time.sleep(GamePad.SHORT_PRESS_TIME)
+        self.gamepad.release_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_A)
+        self.gamepad.update()
+
+    def leftFuncPress(self):
+        self.gamepad.press_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_X)
+        self.gamepad.update()
+        time.sleep(GamePad.SHORT_PRESS_TIME)
+        self.gamepad.release_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_X)
+        self.gamepad.update()
+
+    def rightShoulder(self):
+        self.gamepad.press_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER)
+        self.gamepad.update()
+        time.sleep(GamePad.SHORT_PRESS_TIME)
+        self.gamepad.release_button(button=vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER)
+        self.gamepad.update()
+
+    def dodge(self):
+        self.downFuncPress()
+
+    def double_dodge(self):
+        self.downFuncPress()
+        time.sleep(GamePad.SHORT_PRESS_TIME)
+        self.leftFuncPress()
+        time.sleep(GamePad.SHORT_PRESS_TIME)
+        self.rightShoulder()
+
+    def push_space(self):
+        self.rightShoulder()
 
 class DodgingTrigger(GameAudioListener):
     monitor_time = 5  # 秒
 
-    def __init__(self, sample_path: str, action, threshold=0.1, ratio=1.0, is_monitor=False, is_allowed_succe_dodge=False):
+    def __init__(self, sample_path: str, action, threshold=0.1, ratio=1.0, is_allowed_succe_dodge=False, callback=None):
         self.action = action
         self.threshold = threshold
-        self.is_monitor = is_monitor
         self.is_allowed_succe_dodge = is_allowed_succe_dodge
-        if self.is_monitor:
-            self.len_samples = int(self.monitor_time / self.sample_len)
-            self.monitor = WaveMonitor(self.len_samples, self.threshold)
-            self.monitor_array = np.zeros(shape=(self.len_samples,), dtype=np.float64)
+        self.run = True
         super().__init__(sample_path, ratio)
+        if callback is not None:
+            callback(self)
+
+    def setAction(self, action):
+        self.action = action
+    
+    def setThreshold(self, threshold):
+        self.threshold = threshold
+
+    def setRatio(self, ratio):
+        self.ratio = ratio
+
+    def setSucTri(self, is_allowed_succe_dodge):
+        self.is_allowed_succe_dodge = is_allowed_succe_dodge
+
+    def stop(self):
+        self.run = False
+
 
     def online_listening(self):
         print("开始监测")
@@ -233,7 +289,7 @@ class DodgingTrigger(GameAudioListener):
         is_not_past_triggered = True
 
         with self.audio_instance as audio_recorder:
-            while True:
+            while self.run:
                 current_frame = np.empty(shape=(0,), dtype=np.float64)
                 for index in range(int(self.used_sr / self.chunk_size * self.sample_len)):
                     stream_data = audio_recorder.record(numframes=self.chunk_size)
@@ -244,17 +300,11 @@ class DodgingTrigger(GameAudioListener):
                 # 积累完成,计算匹配分数
                 combined_frames = np.append(last_frames, current_frame)
                 max_score = self.matching(combined_frames)
-                if self.is_monitor:
-                    self.monitor_array[:-1] = self.monitor_array[1:]
-                    self.monitor_array[-1] = max_score
-                    self.monitor.update_array(self.monitor_array)
 
                 if max_score >= self.threshold:
                     if is_not_past_triggered or self.is_allowed_succe_dodge:  # 是否可以连续激发
                         self.action()  # 触发动作
                         trigger_text = "触发分数: {}".format(round(max_score, 5))
-                        if self.is_monitor:
-                            self.monitor.update_message(trigger_text)
                         print(trigger_text)
 
                         is_not_past_triggered = False
